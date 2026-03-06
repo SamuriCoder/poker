@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Royal Flush - Texas Hold'em</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Cinzel:wght@400;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Start Screen -->
+    <div id="start-screen" class="screen active">
+        <div class="start-container">
+            <div class="logo-container">
+                <div class="card-fan">
+                    <div class="fan-card" style="--i: 0">♠</div>
+                    <div class="fan-card" style="--i: 1">♥</div>
+                    <div class="fan-card" style="--i: 2">♦</div>
+                    <div class="fan-card" style="--i: 3">♣</div>
+                </div>
+                <h1 class="game-title">ROYAL FLUSH</h1>
+                <p class="game-subtitle">Texas Hold'em Poker</p>
+            </div>
+            
+            <div class="multiplayer-section">
+                <div class="name-input-row">
+                    <label for="player-name-input">Your Name</label>
+                    <input id="player-name-input" type="text" maxlength="16" placeholder="Enter a display name">
+                </div>
+
+                <div class="multiplayer-actions">
+                    <div class="host-column">
+                        <button id="host-game-btn" class="start-btn small">
+                            <span>Host Game</span>
+                            <div class="btn-shine"></div>
+                        </button>
+                        <div id="host-game-code" class="game-code-display" style="display: none;">
+                            <span>Game Code:</span>
+                            <span id="game-code-text"></span>
+                        </div>
+                    </div>
+                    <div class="join-column">
+                        <div class="join-input-row">
+                            <label for="join-code-input">Join Game</label>
+                            <input id="join-code-input" type="text" maxlength="8" placeholder="Enter Code (e.g. ABCD23)">
+                        </div>
+                        <button id="join-game-btn" class="start-btn small">
+                            <span>Join</span>
+                            <div class="btn-shine"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+        <div class="game-container">
+            <!-- Poker Table -->
+            <div class="poker-table">
+                <div class="table-felt">
+                    <!-- Community Cards -->
+                    <div class="community-cards" id="community-cards">
+                        <div class="card-slot"></div>
+                        <div class="card-slot"></div>
+                        <div class="card-slot"></div>
+                        <div class="card-slot"></div>
+                        <div class="card-slot"></div>
+                    </div>
+                    
+                    <!-- Pot Display -->
+                    <div class="pot-display">
+                        <div class="pot-chips"></div>
+                        <span class="pot-amount">Pot: $<span id="pot-amount">0</span></span>
+                    </div>
+                    
+                    <!-- Players Container -->
+                    <div class="players-container" id="players-container">
+                        <!-- Players will be dynamically added here -->
+                    </div>
+                </div>
+                
+                <!-- Table Edge -->
+                <div class="table-edge"></div>
+            </div>
+            
+            <!-- Player's Hand (User) -->
+            <div class="user-hand-container">
+                <div class="sitting-out-message" id="sitting-out-message">You joined mid-round. You'll be dealt in next round.</div>
+                <div class="user-hand" id="user-hand">
+                    <!-- User's cards will be shown here -->
+                </div>
+            </div>
+            
+            <!-- Action Controls -->
+            <div class="action-panel" id="action-panel">
+                <div class="action-buttons">
+                    <button class="action-btn fold-btn" id="fold-btn">
+                        <span class="btn-icon">✕</span>
+                        <span class="btn-text">Fold</span>
+                    </button>
+                    <button class="action-btn check-btn" id="check-btn">
+                        <span class="btn-icon">✓</span>
+                        <span class="btn-text">Check</span>
+                    </button>
+                    <button class="action-btn call-btn" id="call-btn">
+                        <span class="btn-icon">→</span>
+                        <span class="btn-text">Call $<span id="call-amount">0</span></span>
+                    </button>
+                    <button class="action-btn raise-btn" id="raise-btn">
+                        <span class="btn-icon">↑</span>
+                        <span class="btn-text">Raise</span>
+                    </button>
+                </div>
+                
+                <div class="raise-slider-container" id="raise-container" style="display: none;">
+                    <input type="range" id="raise-slider" min="0" max="1000" value="50">
+                    <div class="raise-amount">
+                        <span>$</span>
+                        <input type="number" id="raise-input" value="50">
+                    </div>
+                    <button class="confirm-raise-btn" id="confirm-raise">Confirm Raise</button>
+                </div>
+            </div>
+            
+            <!-- Game Info -->
+            <div class="game-info">
+                <div class="round-info">
+                    <span id="round-stage">Pre-Flop</span>
+                </div>
+                <div class="user-chips">
+                    <span class="chips-icon">🪙</span>
+                    <span>$<span id="user-chips">1000</span></span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Message Overlay -->
+        <div class="message-overlay" id="message-overlay">
+            <div class="message-content">
+                <h2 id="message-title"></h2>
+                <p id="message-text"></p>
+                <button id="continue-btn" class="continue-btn">Continue</button>
+            </div>
+        </div>
+        
+        <!-- All-in runout overlay (no button; cards reveal automatically) -->
+        <div class="allin-runout-overlay" id="allin-runout-overlay">
+            <div class="allin-runout-content">
+                <p class="allin-runout-title">Remaining players are all-in</p>
+                <p class="allin-runout-text">Dealing remaining cards...</p>
+            </div>
+        </div>
+
+        <!-- Waiting for players overlay -->
+        <div class="waiting-overlay" id="waiting-overlay">
+            <div class="waiting-content">
+                <p class="waiting-text">Waiting on <span id="waiting-names"></span> to join the round</p>
+            </div>
+        </div>
+        
+        
+        <!-- Shuffle Animation Overlay -->
+        <div class="shuffle-overlay" id="shuffle-overlay">
+            <div class="shuffle-cards">
+                <div class="shuffle-card"></div>
+                <div class="shuffle-card"></div>
+                <div class="shuffle-card"></div>
+                <div class="shuffle-card"></div>
+                <div class="shuffle-card"></div>
+            </div>
+            <p class="shuffle-text">Shuffling...</p>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameover-screen" class="screen">
+        <div class="gameover-container">
+            <h1 id="gameover-title">Game Over</h1>
+            <p id="gameover-message"></p>
+            <button id="play-again-btn" class="start-btn">Play Again</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
+
