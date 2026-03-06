@@ -112,9 +112,12 @@ function getPublicState(room) {
     communityCards: room.communityCards,
     pot: room.pot,
     currentBet: room.currentBet,
+    blinds: room.blinds || { enabled: false, small: 0, big: 0 },
+    minBet: room.minBet || MIN_BET,
     dealerIndex: room.dealerIndex,
     currentPlayerIndex: room.currentPlayerIndex,
     stage: room.stage,
+    raiseLocked: !!room.raiseLocked,
     roundActive: room.roundActive,
     gameActive: room.gameActive
   };
@@ -319,9 +322,28 @@ function getNextActivePlayer(room, currentIndex) {
 
 function resetBets(room) {
   room.currentBet = 0;
+  room.raiseLocked = false;
   room.players.forEach(p => {
     p.currentBet = 0;
   });
+}
+
+function normalizeBlindAmount(value) {
+  const n = parseInt(String(value || ''), 10);
+  if (!Number.isFinite(n) || Number.isNaN(n)) return null;
+  return Math.max(0, Math.floor(n));
+}
+
+function postForcedBet(room, playerIndex, amount) {
+  const player = room.players[playerIndex];
+  if (!player || player.folded || player.chips <= 0) return 0;
+  const actual = Math.min(amount, player.chips);
+  if (actual <= 0) return 0;
+  player.chips -= actual;
+  player.currentBet = (player.currentBet || 0) + actual;
+  room.pot += actual;
+  if (player.chips === 0) player.isAllIn = true;
+  return actual;
 }
 
 /** Max total bet = min effective stack (chips + currentBet) among non-folded. Poorest can call up to that total. */
@@ -345,6 +367,8 @@ io.on('connection', socket => {
       communityCards: [],
       pot: 0,
       currentBet: 0,
+      blinds: { enabled: false, small: 0, big: 0 },
+      minBet: MIN_BET,
       dealerIndex: 0,
       currentPlayerIndex: 0,
       stage: 'preflop',
@@ -411,11 +435,26 @@ io.on('connection', socket => {
     io.to(code).emit('roomState', getPublicState(room));
   });
 
-  socket.on('startGame', ({ code }) => {
+  socket.on('startGame', ({ code, blinds }) => {
     const room = rooms[code];
     if (!room) return;
     if (room.gameActive) return;
     if (room.players.length < 2) return;
+
+    if (blinds && blinds.enabled) {
+      const small = normalizeBlindAmount(blinds.small);
+      const big = normalizeBlindAmount(blinds.big);
+      if (small && big && small > 0 && big > 0 && big >= small) {
+        room.blinds = { enabled: true, small, big };
+        room.minBet = big;
+      } else {
+        room.blinds = { enabled: false, small: 0, big: 0 };
+        room.minBet = MIN_BET;
+      }
+    } else {
+      room.blinds = { enabled: false, small: 0, big: 0 };
+      room.minBet = MIN_BET;
+    }
 
     room.gameActive = true;
     io.to(code).emit('gameStarted', getPublicState(room));
@@ -490,6 +529,7 @@ function startNewRound(room) {
 
   room.pot = 0;
   room.currentBet = 0;
+  room.raiseLocked = false;
   room.communityCards = [];
   room.stage = 'preflop';
   room.roundActive = true;
@@ -507,6 +547,41 @@ function startNewRound(room) {
   } while (room.players[room.dealerIndex].chips <= 0);
 
   room.deck = createDeck();
+
+  // Post blinds (if enabled) and set correct preflop first-to-act.
+  // 3+ players: SB left of button, BB left of SB, UTG left of BB.
+  // Heads-up: button is SB; SB acts first preflop.
+  room.allInFromBlinds = false;
+  const blindsEnabled = !!(room.blinds && room.blinds.enabled);
+  const inHand = room.players.filter(p => !p.folded && p.chips > 0);
+  const inHandCount = inHand.length;
+
+  if (blindsEnabled && inHandCount >= 2) {
+    const sbIndex = (inHandCount === 2)
+      ? room.dealerIndex
+      : getNextActivePlayer(room, room.dealerIndex);
+    const bbIndex = getNextActivePlayer(room, sbIndex);
+
+    postForcedBet(room, sbIndex, room.blinds.small);
+    const bbPosted = postForcedBet(room, bbIndex, room.blinds.big);
+    room.currentBet = bbPosted;
+
+    room.currentPlayerIndex = (inHandCount === 2)
+      ? sbIndex
+      : getNextActivePlayer(room, bbIndex);
+
+    // Treat the BB as the "last raiser" so they always get last action preflop.
+    room.lastRaiserIndex = bbIndex;
+
+    const activeNonAllIn = room.players.filter(p => !p.folded && !p.isAllIn);
+    if (activeNonAllIn.length === 0) {
+      room.allInFromBlinds = true;
+    }
+  } else {
+    room.currentBet = 0;
+    room.currentPlayerIndex = getNextActivePlayer(room, room.dealerIndex);
+    room.lastRaiserIndex = room.currentPlayerIndex;
+  }
 
   const numPlayers = room.players.length;
   for (let round = 0; round < 2; round++) {
@@ -529,8 +604,6 @@ function startNewRound(room) {
     }
   });
 
-  room.currentPlayerIndex = getNextActivePlayer(room, room.dealerIndex);
-  room.lastRaiserIndex = room.currentPlayerIndex;
   io.to(room.code).emit('roomState', getPublicState(room));
 }
 
@@ -538,6 +611,11 @@ function checkAllReadyAndStartTurn(room) {
   const playersInHand = room.players.filter(p => p.connected !== false && !p.folded);
   const allReady = playersInHand.length > 0 && playersInHand.every(p => room.playersReady.has(p.id));
   if (!allReady) return;
+  if (room.allInFromBlinds) {
+    room.allInFromBlinds = false;
+    startAllInRunout(room);
+    return;
+  }
   io.to(room.code).emit('turn', { currentPlayerId: room.players[room.currentPlayerIndex].id });
   io.to(room.code).emit('roomState', getPublicState(room));
 }
@@ -716,8 +794,13 @@ function executeAction(room, player, action, amount) {
       });
     }
   } else if (action === 'raise') {
+    // House rule / simplification:
+    // If a player has already raised all-in (short stack), remaining players may only call/fold.
+    if (room.raiseLocked) return;
+
     const effectiveMaxBet = getEffectiveMaxBet(room);
-    let totalBet = Math.max(room.currentBet + MIN_BET, amount);
+    const minIncrement = room.minBet || MIN_BET;
+    let totalBet = Math.max(room.currentBet + minIncrement, amount);
     totalBet = Math.min(totalBet, effectiveMaxBet);
     const additionalAmount = totalBet - player.currentBet;
     if (additionalAmount <= 0) return;
@@ -731,6 +814,7 @@ function executeAction(room, player, action, amount) {
 
     if (player.chips === 0) {
       player.isAllIn = true;
+      room.raiseLocked = true;
       io.to(room.code).emit('actionApplied', {
         code: room.code,
         playerId: player.id,
@@ -790,9 +874,20 @@ function executeAction(room, player, action, amount) {
 
   const allMatched = activeNonAllIn.every(p => p.currentBet === room.currentBet);
   const nextPlayerIndex = getNextActivePlayer(room, room.currentPlayerIndex);
-  const bettingRoundComplete = allMatched && (nextPlayerIndex === room.lastRaiserIndex);
+  const lastRaiser = room.players[room.lastRaiserIndex];
+  const lastRaiserCantAct = !lastRaiser || lastRaiser.folded || lastRaiser.isAllIn || lastRaiser.chips <= 0;
+  const bettingRoundComplete = allMatched && (room.raiseLocked || lastRaiserCantAct || nextPlayerIndex === room.lastRaiserIndex);
 
   if (bettingRoundComplete) {
+    // If at least one player is all-in and there's <= 1 player who can still act,
+    // there are no more betting decisions to be made; just run out the board.
+    const activePlayers = room.players.filter(p => !p.folded);
+    const anyAllIn = activePlayers.some(p => p.isAllIn);
+    if (anyAllIn && activeNonAllIn.length <= 1) {
+      startAllInRunout(room);
+      return;
+    }
+
     advanceStage(room);
     return;
   }

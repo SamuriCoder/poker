@@ -183,6 +183,47 @@
         </div>
     </div>
 
+    <!-- Blinds Configuration Overlay (host only) -->
+    <div class="blinds-overlay" id="blinds-overlay">
+        <div class="blinds-content" role="dialog" aria-modal="true" aria-labelledby="blinds-title">
+            <h2 id="blinds-title">Blinds</h2>
+            <p class="blinds-subtitle">Choose your table stakes for this game.</p>
+
+            <div class="blinds-options">
+                <label class="blinds-option">
+                    <input type="radio" name="blinds-mode" id="blinds-mode-on" value="on" checked>
+                    <span>Use blinds</span>
+                </label>
+                <label class="blinds-option">
+                    <input type="radio" name="blinds-mode" id="blinds-mode-off" value="off">
+                    <span>No blinds</span>
+                </label>
+            </div>
+
+            <div class="blinds-fields" id="blinds-fields">
+                <div class="blinds-field">
+                    <label for="small-blind-input">Small Blind</label>
+                    <div class="blinds-input-wrap">
+                        <span>$</span>
+                        <input id="small-blind-input" type="number" min="1" step="1" value="25" inputmode="numeric">
+                    </div>
+                </div>
+                <div class="blinds-field">
+                    <label for="big-blind-input">Big Blind</label>
+                    <div class="blinds-input-wrap">
+                        <span>$</span>
+                        <input id="big-blind-input" type="number" min="1" step="1" value="50" inputmode="numeric">
+                    </div>
+                </div>
+            </div>
+
+            <div class="blinds-actions">
+                <button id="blinds-cancel-btn" class="blinds-btn secondary">Cancel</button>
+                <button id="blinds-confirm-btn" class="blinds-btn primary">Start Game</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script src="game.js"></script>
 </body>

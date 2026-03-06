@@ -74,6 +74,8 @@ let gameState = {
     communityCards: [],
     pot: 0,
     currentBet: 0,
+    blinds: { enabled: false, small: 0, big: 0 },
+    minBet: MIN_BET,
     dealerIndex: 0,
     currentPlayerIndex: 0,
     stage: 'preflop',
@@ -83,6 +85,7 @@ let gameState = {
     roundActive: false,
     roomCode: null,
     localPlayerId: null,
+    raiseLocked: false,
     allInRunout: false,
     allInRunoutRevealedCount: 0
 };
@@ -128,7 +131,16 @@ const elements = {
     sittingOutMessage: document.getElementById('sitting-out-message'),
     gameoverTitle: document.getElementById('gameover-title'),
     gameoverMessage: document.getElementById('gameover-message'),
-    playAgainBtn: document.getElementById('play-again-btn')
+    playAgainBtn: document.getElementById('play-again-btn'),
+
+    blindsOverlay: document.getElementById('blinds-overlay'),
+    blindsModeOn: document.getElementById('blinds-mode-on'),
+    blindsModeOff: document.getElementById('blinds-mode-off'),
+    blindsFields: document.getElementById('blinds-fields'),
+    smallBlindInput: document.getElementById('small-blind-input'),
+    bigBlindInput: document.getElementById('big-blind-input'),
+    blindsCancelBtn: document.getElementById('blinds-cancel-btn'),
+    blindsConfirmBtn: document.getElementById('blinds-confirm-btn')
 };
 
 // ============================================
@@ -155,9 +167,12 @@ function applyServerState(state) {
     gameState.communityCards = state.communityCards || [];
     gameState.pot = state.pot || 0;
     gameState.currentBet = state.currentBet || 0;
+    gameState.blinds = state.blinds || gameState.blinds || { enabled: false, small: 0, big: 0 };
+    gameState.minBet = state.minBet || (gameState.blinds && gameState.blinds.enabled ? gameState.blinds.big : MIN_BET);
     gameState.dealerIndex = state.dealerIndex ?? gameState.dealerIndex;
     gameState.currentPlayerIndex = state.currentPlayerIndex ?? gameState.currentPlayerIndex;
     gameState.stage = state.stage || gameState.stage || 'preflop';
+    gameState.raiseLocked = !!state.raiseLocked;
 
     const previousPlayers = gameState.players || [];
     gameState.players = (state.players || []).map(sp => {
@@ -384,8 +399,106 @@ function handleHostGameClick() {
             }
         });
     } else if (roomCode && !gameState.gameActive) {
-        socket.emit('startGame', { code: roomCode });
+        showBlindsConfigModal().then((blindsConfig) => {
+            if (!blindsConfig) return;
+            socket.emit('startGame', { code: roomCode, blinds: blindsConfig });
+        });
     }
+}
+
+function setBlindsFieldsEnabled(enabled) {
+    if (!elements.smallBlindInput || !elements.bigBlindInput) return;
+    elements.smallBlindInput.disabled = !enabled;
+    elements.bigBlindInput.disabled = !enabled;
+    if (elements.blindsFields) {
+        elements.blindsFields.style.opacity = enabled ? '1' : '0.6';
+        elements.blindsFields.style.pointerEvents = enabled ? 'auto' : 'none';
+    }
+}
+
+function normalizeBlindAmount(value) {
+    const n = parseInt(String(value || ''), 10);
+    if (Number.isNaN(n) || !Number.isFinite(n)) return null;
+    return Math.max(0, Math.floor(n));
+}
+
+function showBlindsConfigModal() {
+    return new Promise((resolve) => {
+        if (!elements.blindsOverlay) {
+            resolve({ enabled: false, small: 0, big: 0 });
+            return;
+        }
+
+        const cleanup = () => {
+            elements.blindsOverlay.classList.remove('active');
+            document.removeEventListener('keydown', onKeyDown);
+            if (elements.blindsCancelBtn) elements.blindsCancelBtn.onclick = null;
+            if (elements.blindsConfirmBtn) elements.blindsConfirmBtn.onclick = null;
+            if (elements.blindsModeOn) elements.blindsModeOn.onchange = null;
+            if (elements.blindsModeOff) elements.blindsModeOff.onchange = null;
+        };
+
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                cleanup();
+                resolve(null);
+            }
+        };
+
+        const updateMode = () => {
+            const enabled = !!(elements.blindsModeOn && elements.blindsModeOn.checked);
+            setBlindsFieldsEnabled(enabled);
+        };
+
+        if (elements.blindsModeOn) elements.blindsModeOn.checked = true;
+        if (elements.blindsModeOff) elements.blindsModeOff.checked = false;
+        updateMode();
+
+        if (elements.blindsModeOn) elements.blindsModeOn.onchange = updateMode;
+        if (elements.blindsModeOff) elements.blindsModeOff.onchange = updateMode;
+
+        if (elements.blindsCancelBtn) {
+            elements.blindsCancelBtn.onclick = () => {
+                cleanup();
+                resolve(null);
+            };
+        }
+
+        if (elements.blindsConfirmBtn) {
+            elements.blindsConfirmBtn.onclick = () => {
+                const enabled = !!(elements.blindsModeOn && elements.blindsModeOn.checked);
+                if (!enabled) {
+                    cleanup();
+                    resolve({ enabled: false, small: 0, big: 0 });
+                    return;
+                }
+
+                const small = normalizeBlindAmount(elements.smallBlindInput ? elements.smallBlindInput.value : '');
+                const big = normalizeBlindAmount(elements.bigBlindInput ? elements.bigBlindInput.value : '');
+
+                if (!small || !big || small <= 0 || big <= 0) {
+                    alert('Please enter positive whole numbers for both blinds.');
+                    return;
+                }
+                if (big < small) {
+                    alert('Big blind must be greater than or equal to small blind.');
+                    return;
+                }
+
+                cleanup();
+                resolve({ enabled: true, small, big });
+            };
+        }
+
+        elements.blindsOverlay.classList.add('active');
+        document.addEventListener('keydown', onKeyDown);
+
+        // Focus first input for quick entry
+        if (elements.smallBlindInput) {
+            elements.smallBlindInput.focus();
+            elements.smallBlindInput.select();
+        }
+    });
 }
 
 function handleJoinGameClick() {
@@ -893,6 +1006,7 @@ async function handlePlayerAction(action) {
 
 function showRaiseControls() {
     if (!gameState.isUserTurn) return;
+    if (gameState.raiseLocked) return;
     
     const player = getLocalPlayer();
     if (!player) return;
@@ -901,7 +1015,8 @@ function showRaiseControls() {
     const effectiveMaxBet = nonFolded.length === 0 ? player.chips : Math.min(...nonFolded.map(p => (p.chips || 0) + (p.currentBet || 0)));
     const myMaxTotalBet = (player.chips || 0) + (player.currentBet || 0);
     const maxRaise = Math.min(effectiveMaxBet, myMaxTotalBet);
-    const minRaise = gameState.currentBet + MIN_BET;
+    const minIncrement = gameState.minBet || (gameState.blinds && gameState.blinds.enabled ? gameState.blinds.big : MIN_BET);
+    const minRaise = gameState.currentBet + minIncrement;
     const minRaiseClamped = Math.min(minRaise, maxRaise);
     
     elements.raiseSlider.min = minRaiseClamped;
@@ -1217,7 +1332,10 @@ function updateActionButtons() {
         : `Call $${callAmount}`;
     
     // Raise button - always available if player has chips
-    elements.raiseBtn.disabled = player.chips <= 0;
+    elements.raiseBtn.disabled = player.chips <= 0 || gameState.raiseLocked;
+    if (gameState.raiseLocked) {
+        elements.raiseContainer.style.display = 'none';
+    }
 }
 
 async function showMessage(title, text) {
