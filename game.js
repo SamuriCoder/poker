@@ -52,6 +52,16 @@ const STAGE_NAMES = {
 const STARTING_CHIPS = 1000;
 const MIN_BET = 20;
 
+// Chip denominations (standard poker colors) - largest first for greedy breakdown
+const CHIP_DENOMINATIONS = [
+    { value: 500, color: 'purple', label: '$500' },
+    { value: 100, color: 'black', label: '$100' },
+    { value: 25, color: 'green', label: '$25' },
+    { value: 10, color: 'blue', label: '$10' },
+    { value: 5, color: 'red', label: '$5' },
+    { value: 1, color: 'white', label: '$1' }
+];
+
 // ============================================
 // MULTIPLAYER NETWORK STATE
 // ============================================
@@ -108,7 +118,10 @@ const elements = {
     communityCards: document.getElementById('community-cards'),
     userHand: document.getElementById('user-hand'),
     potAmount: document.getElementById('pot-amount'),
+    potChips: document.querySelector('.pot-chips'),
+    gameContainer: document.querySelector('.game-container'),
     userChips: document.getElementById('user-chips'),
+    userChipsContainer: document.querySelector('.user-chips'),
     roundStage: document.getElementById('round-stage'),
     actionPanel: document.getElementById('action-panel'),
     foldBtn: document.getElementById('fold-btn'),
@@ -559,6 +572,117 @@ function createDeck() {
 
 function isRedSuit(suit) {
     return suit === '♥' || suit === '♦';
+}
+
+// ============================================
+// CHIP UTILITIES
+// ============================================
+
+/** Break down dollar amount into chip counts (greedy, fewest chips). Returns [{value, count, color}, ...] */
+function amountToChips(amount) {
+    const result = [];
+    let remaining = Math.max(0, Math.floor(amount));
+    for (const denom of CHIP_DENOMINATIONS) {
+        if (remaining <= 0) break;
+        const count = Math.floor(remaining / denom.value);
+        if (count > 0) {
+            result.push({ value: denom.value, count, color: denom.color });
+            remaining -= count * denom.value;
+        }
+    }
+    return result;
+}
+
+/** Create HTML for a chip stack. size: 'small' | 'medium' | 'large' */
+function createChipStackHTML(chips, size = 'medium') {
+    if (!chips || chips.length === 0) return '';
+    const sizeClass = `chip-stack-${size}`;
+    let html = `<div class="chip-stack ${sizeClass}">`;
+    for (const { value, count, color } of chips) {
+        const maxShow = size === 'small' ? 4 : size === 'medium' ? 6 : 8;
+        const toShow = Math.min(count, maxShow);
+        for (let i = 0; i < toShow; i++) {
+            html += `<div class="chip chip-${color}" data-value="${value}" style="--stack-i: ${i}"></div>`;
+        }
+        if (count > maxShow) {
+            html += `<div class="chip chip-${color} chip-more" data-value="${value}">+${count - maxShow}</div>`;
+        }
+    }
+    html += '</div>';
+    return html;
+}
+
+/** Render chips in the pot display */
+function renderPotChips() {
+    const container = elements.potChips || document.querySelector('.pot-chips');
+    if (!container) return;
+    container.innerHTML = createChipStackHTML(amountToChips(gameState.pot), 'large');
+}
+
+/** Get element that represents a player's chip stack position (for animation source) */
+function getPlayerChipStackElement(playerId) {
+    if (playerId === localPlayerId) {
+        return document.querySelector('.user-chip-stack') || elements.userChipsContainer;
+    }
+    const seat = document.querySelector(`[data-player-id="${playerId}"]`);
+    return seat ? seat.querySelector('.player-chip-stack') || seat.querySelector('.player-info-box') : null;
+}
+
+/** Animate chips flying from a source element to the pot */
+function animateChipsToPot(fromElement, amount) {
+    if (!fromElement || amount <= 0) return Promise.resolve();
+    const potEl = elements.potChips || document.querySelector('.pot-chips');
+    const container = elements.gameContainer || document.querySelector('.game-container');
+    if (!potEl || !container) return Promise.resolve();
+
+    const chips = amountToChips(amount);
+    if (chips.length === 0) return Promise.resolve();
+
+    let animationLayer = document.getElementById('chip-animation-layer');
+    if (!animationLayer) {
+        animationLayer = document.createElement('div');
+        animationLayer.id = 'chip-animation-layer';
+        animationLayer.className = 'chip-animation-layer';
+        if (container) container.appendChild(animationLayer);
+    }
+
+    const fromRect = fromElement.getBoundingClientRect();
+    const potRect = potEl.getBoundingClientRect();
+    const containerRect = container ? container.getBoundingClientRect() : { left: 0, top: 0 };
+
+    const startX = fromRect.left - containerRect.left + fromRect.width / 2;
+    const startY = fromRect.top - containerRect.top + fromRect.height / 2;
+    const endX = potRect.left - containerRect.left + potRect.width / 2;
+    const endY = potRect.top - containerRect.top + potRect.height / 2;
+
+    const flyingChips = [];
+    let chipIndex = 0;
+    for (const { count, color } of chips) {
+        const toCreate = Math.min(count, 8);
+        for (let i = 0; i < toCreate; i++) {
+            const chip = document.createElement('div');
+            chip.className = `chip chip-${color} chip-flying`;
+            chip.style.cssText = `
+                left: ${startX}px;
+                top: ${startY}px;
+                animation-delay: ${chipIndex * 50}ms;
+                --end-x: ${endX - startX}px;
+                --end-y: ${endY - startY}px;
+            `;
+            animationLayer.appendChild(chip);
+            flyingChips.push(chip);
+            chipIndex++;
+        }
+    }
+
+    const maxDelay = chipIndex * 50;
+    return new Promise(resolve => {
+        setTimeout(() => {
+            flyingChips.forEach(c => c.remove());
+            renderPotChips();
+            resolve();
+        }, 600 + maxDelay);
+    });
 }
 
 // ============================================

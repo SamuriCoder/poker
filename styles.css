@@ -378,6 +378,143 @@ body {
 .chip-blue { background: linear-gradient(145deg, #3b82f6 0%, #1e40af 100%); }
 .chip-green { background: linear-gradient(145deg, #22c55e 0%, #15803d 100%); }
 .chip-black { background: linear-gradient(145deg, #404040 0%, #1a1a1a 100%); }
+.chip-orange { background: linear-gradient(145deg, #fb923c 0%, #ea580c 100%); }
+.chip-purple { background: linear-gradient(145deg, #a855f7 0%, #6b21a8 100%); }
+
+/* ============================================
+   POKER CHIP STACKS
+   ============================================ */
+
+.chip-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    justify-content: center;
+    align-items: center;
+    min-height: 28px;
+}
+
+.chip-stack-small .chip {
+    width: 20px;
+    height: 20px;
+    font-size: 8px;
+}
+
+.chip-stack-medium .chip {
+    width: 26px;
+    height: 26px;
+    font-size: 10px;
+}
+
+.chip-stack-large .chip {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+}
+
+.chip {
+    position: relative;
+    border-radius: 50%;
+    box-shadow:
+        inset 0 2px 4px rgba(255, 255, 255, 0.4),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.2),
+        0 2px 6px rgba(0, 0, 0, 0.3);
+    border: 2px solid rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.chip::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50%;
+    height: 50%;
+    border: 2px dashed rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+}
+
+.chip-more {
+    font-family: 'Roboto Mono', monospace;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7em;
+}
+
+.chip-stack .chip {
+    transform: translateY(calc(var(--stack-i, 0) * -1px));
+}
+
+/* Opponent chips: multiple lines, even rows, in outer space left/right of table */
+.chip-stack-multiline {
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: center;
+    gap: 4px;
+    max-width: 140px;
+}
+
+.chip-stack-multiline .chip {
+    transform: none;
+}
+
+.player-chip-stack .chip-stack-multiline {
+    max-width: 140px;
+}
+
+.user-chip-stack,
+.player-chip-stack {
+    margin: 4px 0;
+}
+
+.user-chip-stack {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 14px;
+    order: 1;
+}
+
+.user-hand-container .user-hand {
+    order: 2;
+}
+
+/* Chip animation layer for flying chips */
+.chip-animation-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 500;
+}
+
+.chip-flying {
+    position: absolute;
+    width: 28px;
+    height: 28px;
+    margin-left: -14px;
+    margin-top: -14px;
+    border-radius: 50%;
+    box-shadow:
+        inset 0 2px 4px rgba(255, 255, 255, 0.4),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.2),
+        0 2px 6px rgba(0, 0, 0, 0.3);
+    animation: chipFlyToPot 0.6s ease-out forwards;
+}
+
+.chip-flying.chip-orange { border: 2px solid rgba(0, 0, 0, 0.25); }
+
+@keyframes chipFlyToPot {
+    0% {
+        transform: translate(0, 0) scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(var(--end-x, 0), var(--end-y, 0)) scale(0.6);
+        opacity: 0.3;
+    }
+}
 
 /* ============================================
    GAME SCREEN
@@ -410,6 +547,15 @@ body {
     aspect-ratio: 2 / 1;
     margin: 0 auto;
     flex-shrink: 0;
+    transition: max-width 0.3s ease;
+}
+
+/* 5+ players: larger table; size scales slightly per extra player (6, 7, 8...) so everyone fits */
+.poker-table.table-expanded {
+    max-width: min(var(--table-expanded-max-width, 1520px), var(--table-expanded-max-width-vh, 120vh));
+    max-height: var(--table-expanded-max-height, 60vh);
+    flex-shrink: 1;
+    min-height: 0;
 }
 
 .table-felt {
@@ -459,10 +605,31 @@ body {
    COMMUNITY CARDS
    ============================================ */
 
+/* When a player is at the top, push center content and pot down to avoid cramping (accounts for Bet text under player info) */
+.table-felt.has-top-player .community-cards {
+    margin-top: 18%;
+}
+
+/* Bigger table (5+ players): keep community cards and pot toward center */
+.poker-table.table-expanded .table-felt .community-cards {
+    margin-top: 6%;
+}
+.poker-table.table-expanded .table-felt.has-top-player .community-cards {
+    margin-top: 10%;
+}
+
+/* 6+ players: move card outline and pot a little down (like 4-player layout) */
+.poker-table.table-expanded .table-felt.six-or-more-players .community-cards {
+    margin-top: 12%;
+}
+.poker-table.table-expanded .table-felt.six-or-more-players.has-top-player .community-cards {
+    margin-top: 14%;
+}
+
 .community-cards {
     display: flex;
     gap: 10px;
-    margin-bottom: 15px;
+    margin-bottom: 12px;
     z-index: 10;
 }
 
@@ -610,13 +777,16 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5px;
+    justify-content: center;
+    gap: 8px;
     z-index: 10;
 }
 
 .pot-chips {
     display: flex;
-    gap: -5px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
 }
 
 .pot-amount {
@@ -731,6 +901,59 @@ body {
     min-width: 100px;
 }
 
+/* 5+ players: smaller cards and tighter spacing to prevent cards overlapping info box */
+.table-felt.many-players .player-seat {
+    gap: 4px;
+}
+
+.table-felt.many-players .player-cards .card {
+    width: 36px;
+    height: 50px;
+}
+
+.table-felt.many-players .player-cards .card .card-rank,
+.table-felt.many-players .player-cards .card .card-suit {
+    font-size: 8px;
+}
+
+.table-felt.many-players .player-cards .card .card-center {
+    font-size: 18px;
+}
+
+.table-felt.many-players .player-cards .card .card-corner.top {
+    top: 3px;
+    left: 4px;
+}
+
+.table-felt.many-players .player-cards .card .card-corner.bottom {
+    bottom: 3px;
+    right: 4px;
+}
+
+.table-felt.many-players .player-info-box {
+    padding: 5px 10px;
+    min-width: 80px;
+    margin-top: 2px;
+}
+
+.table-felt.many-players .player-name {
+    font-size: 0.7rem;
+}
+
+.table-felt.many-players .player-chips {
+    font-size: 0.8rem;
+}
+
+.table-felt.many-players .player-bet,
+.table-felt.many-players .player-action {
+    font-size: 0.65rem;
+}
+
+.table-felt.many-players .player-chip-stack .chip {
+    width: 16px;
+    height: 16px;
+}
+
 .player-name {
     font-size: 0.8rem;
     color: var(--text-light);
@@ -780,6 +1003,7 @@ body {
 
 .user-hand-container {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     padding: 20px 0;

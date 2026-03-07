@@ -57,10 +57,11 @@
     <!-- Game Screen -->
     <div id="game-screen" class="screen">
         <div class="game-container">
+            <div id="chip-animation-layer" class="chip-animation-layer" aria-hidden="true"></div>
             <!-- Poker Table -->
             <div class="poker-table">
                 <div class="table-felt">
-                    <!-- Community Cards -->
+                    <!-- Community Cards (on top) -->
                     <div class="community-cards" id="community-cards">
                         <div class="card-slot"></div>
                         <div class="card-slot"></div>
@@ -68,8 +69,7 @@
                         <div class="card-slot"></div>
                         <div class="card-slot"></div>
                     </div>
-                    
-                    <!-- Pot Display -->
+                    <!-- Pot Display (below cards) -->
                     <div class="pot-display">
                         <div class="pot-chips"></div>
                         <span class="pot-amount">Pot: $<span id="pot-amount">0</span></span>
@@ -88,6 +88,7 @@
             <!-- Player's Hand (User) -->
             <div class="user-hand-container">
                 <div class="sitting-out-message" id="sitting-out-message">You joined mid-round. You'll be dealt in next round.</div>
+                <div class="user-chip-stack" id="user-chip-stack"></div>
                 <div class="user-hand" id="user-hand">
                     <!-- User's cards will be shown here -->
                 </div>
