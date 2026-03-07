@@ -51,15 +51,28 @@ const STAGE_NAMES = {
 
 const STARTING_CHIPS = 1000;
 const MIN_BET = 20;
+const BET_INCREMENT = 5;
 
-// Chip denominations (standard poker colors) - largest first for greedy breakdown
+/** Round amount to nearest multiple of BET_INCREMENT (5). */
+function roundToBetMultiple(n) {
+    return Math.round(n / BET_INCREMENT) * BET_INCREMENT;
+}
+/** Round up to next multiple of BET_INCREMENT. */
+function roundUpToBetMultiple(n) {
+    return Math.ceil(n / BET_INCREMENT) * BET_INCREMENT;
+}
+/** Round down to previous multiple of BET_INCREMENT. */
+function roundDownToBetMultiple(n) {
+    return Math.floor(n / BET_INCREMENT) * BET_INCREMENT;
+}
+
+// Chip denominations (standard poker colors) - largest first for greedy breakdown (multiples of 5 only)
 const CHIP_DENOMINATIONS = [
     { value: 500, color: 'purple', label: '$500' },
     { value: 100, color: 'black', label: '$100' },
     { value: 25, color: 'green', label: '$25' },
     { value: 10, color: 'blue', label: '$10' },
-    { value: 5, color: 'red', label: '$5' },
-    { value: 1, color: 'orange', label: '$1' }
+    { value: 5, color: 'red', label: '$5' }
 ];
 
 // ============================================
@@ -578,10 +591,10 @@ function isRedSuit(suit) {
 // CHIP UTILITIES
 // ============================================
 
-/** Break down dollar amount into chip counts (greedy, fewest chips). Returns [{value, count, color}, ...] */
+/** Break down dollar amount into chip counts (greedy, fewest chips). Returns [{value, count, color}, ...]. Amount is rounded to BET_INCREMENT so only whole chips are used. */
 function amountToChips(amount) {
     const result = [];
-    let remaining = Math.max(0, Math.floor(amount));
+    let remaining = Math.max(0, roundDownToBetMultiple(Math.floor(amount)));
     for (const denom of CHIP_DENOMINATIONS) {
         if (remaining <= 0) break;
         const count = Math.floor(remaining / denom.value);
@@ -1143,11 +1156,16 @@ function showRaiseControls() {
     const minIncrement = gameState.minBet || (gameState.blinds && gameState.blinds.enabled ? gameState.blinds.big : MIN_BET);
     const minRaise = gameState.currentBet + minIncrement;
     const minRaiseClamped = Math.min(minRaise, maxRaise);
+    const minRounded = roundUpToBetMultiple(minRaiseClamped);
+    const maxRounded = roundDownToBetMultiple(maxRaise);
+    const effectiveMin = Math.min(minRounded, maxRounded);
     
-    elements.raiseSlider.min = minRaiseClamped;
-    elements.raiseSlider.max = maxRaise;
-    elements.raiseSlider.value = Math.min(Math.max(minRaiseClamped, minRaise * 2), maxRaise);
-    elements.raiseInput.value = elements.raiseSlider.value;
+    elements.raiseSlider.min = effectiveMin;
+    elements.raiseSlider.max = maxRounded;
+    elements.raiseSlider.step = BET_INCREMENT;
+    const initialVal = Math.min(Math.max(effectiveMin, roundToBetMultiple(minRaise * 2)), maxRounded);
+    elements.raiseSlider.value = initialVal;
+    elements.raiseInput.value = initialVal;
     
     elements.raiseContainer.style.display = 'flex';
 }
@@ -1157,10 +1175,12 @@ function updateRaiseAmount() {
 }
 
 function updateRaiseSlider() {
-    const value = parseInt(elements.raiseInput.value, 10) || 0;
+    const raw = parseInt(elements.raiseInput.value, 10) || 0;
     const min = parseInt(elements.raiseSlider.min, 10);
     const max = parseInt(elements.raiseSlider.max, 10);
-    elements.raiseSlider.value = Math.max(min, Math.min(max, value));
+    const clamped = Math.max(min, Math.min(max, raw));
+    elements.raiseSlider.value = clamped;
+    // Leave input as typed; rounding to multiple of 5 happens on Confirm
 }
 
 async function confirmRaise() {
@@ -1168,11 +1188,12 @@ async function confirmRaise() {
     
     const player = getLocalPlayer();
     if (!player || !socket || !roomCode || localPlayerId == null) return;
-    const raiseAmount = parseInt(elements.raiseInput.value, 10);
+    const raw = parseInt(elements.raiseInput.value, 10) || 0;
+    const raiseAmount = roundToBetMultiple(raw);
     
     elements.raiseContainer.style.display = 'none';
     
-    if (!Number.isNaN(raiseAmount) && raiseAmount > 0) {
+    if (raiseAmount > 0) {
         socket.emit('playerAction', {
             code: roomCode,
             playerId: localPlayerId,
