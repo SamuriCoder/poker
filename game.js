@@ -333,7 +333,8 @@ function setupSocket() {
         }
     });
 
-    socket.on('showdown', ({ state, winners, players }) => {
+    socket.on('showdown', (payload) => {
+        const { state, winners, players } = payload || {};
         applyServerState(state);
 
         players.forEach(p => {
@@ -350,15 +351,17 @@ function setupSocket() {
         });
 
         if (winners && winners.length > 0) {
-            const winnerNames = winners.map(w => {
-                const pl = gameState.players.find(p => p.id === w.playerId);
-                return pl ? pl.name : 'Player';
-            }).join(' & ');
-            const handName = winners[0].hand.name;
-            showMessage(
-                winners.length > 1 ? 'Split Pot!' : `${winnerNames} Wins!`,
-                `${winnerNames} win${winners.length === 1 ? 's' : ''} the pot with ${handName}!`
-            );
+            const winnerHand = winners[0].hand;
+            const runnerUp = payload.runnerUp || null;
+            const includeKicker = wasWinDecidedByKicker(winnerHand, runnerUp && runnerUp.hand);
+            const handDescription = getHandDescription(winnerHand, includeKicker);
+            const winningCards = winnerHand.cards;
+            if (winningCards && winningCards.length === 5) {
+                highlightWinningCards(winningCards);
+            }
+            const playersFromPayload = payload.players || null;
+            const { title, body } = getShowdownMessageParts(winners, handDescription, undefined, playersFromPayload);
+            showMessage(title, body);
         }
     });
 
@@ -375,16 +378,20 @@ function setupSocket() {
 
     socket.on('gameEnded', (payload) => {
         const state = payload && payload.state != null ? payload.state : payload;
-        const winnerNames = payload && payload.winnerNames;
-        const handName = payload && payload.handName;
         applyServerState(state);
-        endGame(winnerNames, handName);
+        endGame(payload);
     });
 
-    socket.on('playerEliminated', ({ winnerNames, handName } = {}) => {
+    socket.on('playerEliminated', (payload = {}) => {
+        const { winnerNames, handName, lastShowdownHand, lastShowdownRunnerUp } = payload;
         let detail = "You went all-in and finished with $0.";
         if (winnerNames) {
-            detail += "\n\n" + (winnerNames + " won" + (handName ? " with a " + handName + "." : " (all others folded)."));
+            const handDescription = lastShowdownHand
+                ? getHandDescription(lastShowdownHand, wasWinDecidedByKicker(lastShowdownHand, lastShowdownRunnerUp && lastShowdownRunnerUp.hand))
+                : (handName || '');
+            detail += "\n\n" + (handDescription
+                ? (winnerNames + " won with " + handDescription + ".")
+                : (winnerNames + " won (all others folded)."));
         }
         showMessage(
             "You're Out!",
@@ -712,6 +719,9 @@ function animateChipsToPot(fromElement, amount) {
 function createCardElement(card, faceDown = false, animationDelay = 0) {
     const cardEl = document.createElement('div');
     cardEl.className = `card ${faceDown ? 'face-down' : (isRedSuit(card.suit) ? 'red' : 'black')}`;
+    if (card && card.rank != null && card.suit) {
+        cardEl.dataset.card = `${card.rank}-${card.suit}`;
+    }
     
     if (!faceDown) {
         cardEl.innerHTML = `
@@ -733,6 +743,22 @@ function createCardElement(card, faceDown = false, animationDelay = 0) {
     }
     
     return cardEl;
+}
+
+function getCardKey(card) {
+    return card && card.rank != null && card.suit ? `${card.rank}-${card.suit}` : null;
+}
+
+function highlightWinningCards(cards) {
+    if (!cards || cards.length === 0) return;
+    const keys = new Set(cards.map(c => getCardKey(c)).filter(Boolean));
+    document.querySelectorAll('.card[data-card]').forEach(el => {
+        if (keys.has(el.dataset.card)) el.classList.add('winning-hand-card');
+    });
+}
+
+function clearWinningCardHighlights() {
+    document.querySelectorAll('.card.winning-hand-card').forEach(el => el.classList.remove('winning-hand-card'));
 }
 
 // ============================================
@@ -889,6 +915,108 @@ function compareHands(hand1, hand2) {
         return 0;
     }
     return hand1.value - hand2.value;
+}
+
+function valueToRankLabel(value) {
+    if (value === 14) return 'Ace';
+    if (value === 13) return 'King';
+    if (value === 12) return 'Queen';
+    if (value === 11) return 'Jack';
+    return String(value);
+}
+
+/** Returns a human-readable description of the hand. Only includes kicker when includeKicker is true (i.e. kicker decided the win). */
+function getHandDescription(hand, includeKicker = false) {
+    if (!hand || !hand.comparisonRanks || hand.comparisonRanks.length < 5) {
+        return hand ? hand.name : 'Unknown';
+    }
+    const r = hand.comparisonRanks;
+    const L = v => valueToRankLabel(v);
+
+    switch (hand.rank) {
+        case HAND_RANKINGS.ROYAL_FLUSH:
+            return 'Royal Flush';
+        case HAND_RANKINGS.STRAIGHT_FLUSH:
+            return `${L(r[0])}-High Straight Flush`;
+        case HAND_RANKINGS.FOUR_OF_A_KIND:
+            return includeKicker ? `Four ${L(r[0])}s, ${L(r[4])} kicker` : `Four ${L(r[0])}s`;
+        case HAND_RANKINGS.FULL_HOUSE:
+            return `${L(r[0])}s Full of ${L(r[3])}s`;
+        case HAND_RANKINGS.FLUSH:
+            return `${L(r[0])}-High Flush`;
+        case HAND_RANKINGS.STRAIGHT:
+            return `${L(r[0])}-High Straight`;
+        case HAND_RANKINGS.THREE_OF_A_KIND:
+            return includeKicker ? `Three ${L(r[0])}s, ${L(r[3])}-${L(r[4])} Kickers` : `Three ${L(r[0])}s`;
+        case HAND_RANKINGS.TWO_PAIR:
+            return includeKicker ? `Two Pair of ${L(r[0])}s and ${L(r[2])}s, ${L(r[4])} Kicker` : `Two Pair of ${L(r[0])}s and ${L(r[2])}s`;
+        case HAND_RANKINGS.ONE_PAIR:
+            return includeKicker ? `Pair of ${L(r[0])}s, ${L(r[2])} Kicker` : `Pair of ${L(r[0])}s`;
+        case HAND_RANKINGS.HIGH_CARD:
+            return includeKicker ? `${L(r[0])}-High, ${L(r[1])}-${L(r[2])} Kickers` : `${L(r[0])}-High`;
+        default:
+            return hand.name || 'Unknown';
+    }
+}
+
+/** Index in comparisonRanks at which kicker(s) start for this hand type. Main hand is 0..start-1. */
+function getKickerStartIndex(handRank) {
+    switch (handRank) {
+        case HAND_RANKINGS.HIGH_CARD: return 1;   // high card at 0, rest are kickers
+        case HAND_RANKINGS.ONE_PAIR: return 2;     // pair at 0,1; kickers at 2,3,4
+        case HAND_RANKINGS.TWO_PAIR: return 4;    // pairs at 0,1 and 2,3; kicker at 4
+        case HAND_RANKINGS.THREE_OF_A_KIND: return 3;  // trips at 0,1,2; kickers at 3,4
+        case HAND_RANKINGS.FOUR_OF_A_KIND: return 4;   // quads at 0-3; kicker at 4
+        default: return 5;  // straight, flush, full house, etc. – no kicker in description
+    }
+}
+
+/** True only when the main part of the hand is identical and the winner beat runner-up on kicker alone. */
+function wasWinDecidedByKicker(winnerHand, runnerUpHand) {
+    if (!runnerUpHand || !winnerHand) return false;
+    if (winnerHand.rank !== runnerUpHand.rank) return false;
+    if (compareHands(winnerHand, runnerUpHand) <= 0) return false;
+
+    const a = winnerHand.comparisonRanks;
+    const b = runnerUpHand.comparisonRanks;
+    if (!a || !b || a.length !== 5 || b.length !== 5) return false;
+
+    const kickerStart = getKickerStartIndex(winnerHand.rank);
+    for (let i = 0; i < 5; i++) {
+        if (a[i] !== b[i]) {
+            return i >= kickerStart;  // first difference must be in kicker region
+        }
+    }
+    return false;
+}
+
+/** Builds title and body for showdown message; makes split pot and kicker wins clear.
+ *  playersFromPayload: optional array of { id, name } from server (e.g. payload.players) so names resolve correctly. */
+function getShowdownMessageParts(winners, handDescription, potAmount, playersFromPayload) {
+    const isSplit = winners && winners.length > 1;
+    const winnerNames = winners && winners.length > 0
+        ? winners.map(w => {
+            const id = w.playerId ?? w.player?.id;
+            const fromPayload = playersFromPayload && playersFromPayload.find(p => p.id == id);
+            if (fromPayload && fromPayload.name != null && fromPayload.name !== '') return fromPayload.name;
+            const pl = gameState.players.find(p => p.id == id);
+            if (pl && pl.name) return pl.name;
+            if (w.player && w.player.name) return w.player.name;
+            return 'Winner';
+        }).join(' & ')
+        : 'Winner';
+    const potStr = potAmount != null ? ` $${potAmount}` : '';
+
+    if (isSplit) {
+        return {
+            title: 'Split Pot!',
+            body: `${winnerNames} split the pot with ${handDescription} (tie).`
+        };
+    }
+    return {
+        title: `${winnerNames} Wins!`,
+        body: `${winnerNames} wins the pot${potStr} with ${handDescription}`
+    };
 }
 
 // ============================================
@@ -1069,13 +1197,16 @@ async function showdown() {
     }
     
     // Show winner
-    const winnerNames = winners.map(w => w.player.name).join(' & ');
-    const handName = winners[0].hand.name;
-    
-    await showMessage(
-        winners.length > 1 ? 'Split Pot!' : `${winnerNames} Wins!`,
-        `${winnerNames} win${winners.length === 1 ? 's' : ''} $${gameState.pot} with ${handName}!`
-    );
+    const winnerHand = winners[0].hand;
+    const runnerUp = results.length >= 2 && winners.length === 1 ? results[1] : null;
+    const includeKicker = wasWinDecidedByKicker(winnerHand, runnerUp && runnerUp.hand);
+    const handDescription = getHandDescription(winnerHand, includeKicker);
+    const winningCards = winnerHand.cards;
+    if (winningCards && winningCards.length === 5) {
+        highlightWinningCards(winningCards);
+    }
+    const { title, body } = getShowdownMessageParts(winners, handDescription, gameState.pot);
+    await showMessage(title, body);
     
     // Highlight winner
     for (const winner of winners) {
@@ -1103,22 +1234,29 @@ async function endRound(winner) {
     updateUI();
 }
 
-function endGame(winnerNames, handName) {
+function endGame(payload) {
     gameState.gameActive = false;
-    
-    // Find winner
+
+    const winnerNames = payload && payload.winnerNames;
+    const lastHand = payload && payload.lastShowdownHand;
+    const lastRunnerUp = payload && payload.lastShowdownRunnerUp;
+    const handDescription = lastHand
+        ? getHandDescription(lastHand, wasWinDecidedByKicker(lastHand, lastRunnerUp && lastRunnerUp.hand))
+        : (payload && payload.handName) || '';
+
     const sortedPlayers = [...gameState.players].sort((a, b) => b.chips - a.chips);
     const winner = sortedPlayers[0];
-    
+    const displayWinnerName = (winnerNames != null && winnerNames !== '') ? winnerNames : (winner && winner.name) || 'Winner';
+
     const local = getLocalPlayer();
     const isUserWinner = winner && local && winner.id === local.id;
-    
+
     const title = isUserWinner ? 'Congratulations!' : 'Game Over';
     let msg = isUserWinner
         ? `You won with $${winner ? winner.chips : 0}!`
-        : `${winner ? winner.name : 'Player'} won with $${winner ? winner.chips : 0}. You finished with $${local ? local.chips : 0}.`;
-    if (winnerNames && handName) {
-        msg += "\n\n" + (isUserWinner ? "You won with a " + handName + "." : winnerNames + " won with " + handName + ".");
+        : `${displayWinnerName} won with $${winner ? winner.chips : 0}. You finished with $${local ? local.chips : 0}.`;
+    if (handDescription) {
+        msg += "\n\n" + (isUserWinner ? "You won with " + handDescription + "." : displayWinnerName + " won with " + handDescription + ".");
     }
     showMessage(title, msg).then(() => {
         roomCode = null;
@@ -1687,6 +1825,7 @@ async function runRoundStartSequence(state) {
 
 function handleContinue() {
     elements.messageOverlay.classList.remove('active');
+    clearWinningCardHighlights();
 
     if (window.messageResolver) {
         window.messageResolver();

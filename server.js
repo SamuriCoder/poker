@@ -733,6 +733,8 @@ function showdown(room) {
     return pl ? pl.name : 'Player';
   }).join(' & ');
   const handName = winners[0] && winners[0].hand ? winners[0].hand.name : '';
+  const lastShowdownHand = winners[0] && winners[0].hand ? winners[0].hand : null;
+  const runnerUp = results.length >= 2 && winners.length === 1 ? results[1] : null;
 
   // Eliminate players with 0 chips: notify them, remove from room, update table for others
   const eliminated = room.players.filter(p => p.chips <= 0);
@@ -740,7 +742,7 @@ function showdown(room) {
     const sock = io.sockets.sockets.get(p.socketId);
     if (sock) {
       sock.leave(room.code);
-      sock.emit('playerEliminated', { winnerNames, handName });
+      sock.emit('playerEliminated', { winnerNames, handName, lastShowdownHand, lastShowdownRunnerUp: runnerUp });
     }
   });
   room.players = room.players.filter(p => p.chips > 0);
@@ -748,6 +750,7 @@ function showdown(room) {
   io.to(room.code).emit('showdown', {
     state: getPublicState(room),
     winners,
+    runnerUp,
     players: room.players.map(p => ({
       id: p.id,
       name: p.name,
@@ -760,6 +763,8 @@ function showdown(room) {
   // Store for game-over screen (who won and with what hand)
   room.lastShowdownWinnerNames = winnerNames;
   room.lastShowdownHandName = handName;
+  room.lastShowdownHand = winners[0] && winners[0].hand ? winners[0].hand : null;
+  room.lastShowdownRunnerUp = runnerUp;
 
   setTimeout(() => {
     if (room.gameActive) {
@@ -774,7 +779,9 @@ function endGame(room) {
   io.to(room.code).emit('gameEnded', {
     state: getPublicState(room),
     winnerNames: room.lastShowdownWinnerNames || null,
-    handName: room.lastShowdownHandName || null
+    handName: room.lastShowdownHandName || null,
+    lastShowdownHand: room.lastShowdownHand || null,
+    lastShowdownRunnerUp: room.lastShowdownRunnerUp || null
   });
 }
 
