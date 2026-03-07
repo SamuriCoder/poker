@@ -211,7 +211,13 @@ function applyServerState(state) {
 
     markLocalPlayerFlag();
 
-    // isUserTurn is set only by the 'turn' event (after all players have loaded the round)
+    // Sync isUserTurn from server state so we recover if the 'turn' event was missed (e.g. after elimination when playerReady timing varies)
+    if (gameState.roundActive && !gameState.allInRunout && gameState.players.length > 0) {
+        const idx = state.currentPlayerIndex ?? gameState.currentPlayerIndex;
+        if (typeof idx === 'number' && idx >= 0 && idx < gameState.players.length) {
+            gameState.isUserTurn = (gameState.players[idx].id === localPlayerId);
+        }
+    }
 
     // Don't render cards while shuffle is showing so they only appear after it finishes
     if (shuffleInProgress) return;

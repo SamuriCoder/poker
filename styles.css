@@ -1251,6 +1251,50 @@ body {
     font-size: 1.3rem;
 }
 
+/* Chip value key */
+.chip-key {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--gold);
+}
+
+.chip-key-label {
+    display: block;
+    margin-bottom: 6px;
+    font-family: 'Cinzel', serif;
+    letter-spacing: 0.05em;
+    opacity: 0.9;
+}
+
+.chip-key-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.chip-key-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chip-key-sample {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    min-height: 20px;
+    flex-shrink: 0;
+}
+
 /* ============================================
    MESSAGE OVERLAY
    ============================================ */
