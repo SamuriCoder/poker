@@ -289,7 +289,7 @@ function setupSocket() {
         applyServerState(state);
     });
 
-    socket.on('allInRunout', ({ state, players }) => {
+    socket.on('allInRunout', ({ state, players, cardsAlreadyRevealed }) => {
         applyServerState(state);
         if (players && Array.isArray(players)) {
             players.forEach(p => {
@@ -297,7 +297,7 @@ function setupSocket() {
                 if (local && p.cards) local.cards = p.cards;
             });
         }
-        runAllInRunoutSequence();
+        runAllInRunoutSequence(typeof cardsAlreadyRevealed === 'number' ? cardsAlreadyRevealed : 0);
     });
 
     socket.on('waitingForPlayers', ({ names }) => {
@@ -1576,9 +1576,12 @@ async function showMessage(title, text) {
 
 const ALLIN_RUNOUT_DELAY_MS = 2000;
 
-async function runAllInRunoutSequence() {
+async function runAllInRunoutSequence(cardsAlreadyRevealed = 0) {
     gameState.allInRunout = true;
-    gameState.allInRunoutRevealedCount = 0;
+    const totalCards = gameState.communityCards.length;
+    const alreadyShown = Math.min(cardsAlreadyRevealed, totalCards);
+    gameState.allInRunoutRevealedCount = alreadyShown;
+
     const overlay = elements.allinRunoutOverlay;
     const overlayContent = overlay ? overlay.querySelector('.allin-runout-content') : null;
     if (overlay) {
@@ -1600,8 +1603,7 @@ async function runAllInRunoutSequence() {
     if (overlayContent) overlayContent.classList.add('faded');
     if (overlay) overlay.classList.add('undimmed');
 
-    const totalToReveal = gameState.communityCards.length;
-    for (let count = 1; count <= totalToReveal; count++) {
+    for (let count = alreadyShown + 1; count <= totalCards; count++) {
         await sleep(ALLIN_RUNOUT_DELAY_MS);
         gameState.allInRunoutRevealedCount = count;
         renderCommunityCards();

@@ -627,13 +627,16 @@ function dealRemainingCommunityCards(room) {
   }
 }
 
-function startAllInRunout(room) {
+/** @param room - room state (communityCards already has current stage's cards in advanceStage path)
+ *  @param cardsAlreadyRevealed - number of community cards the client had already seen (0 preflop, 3 after flop, 4 after turn) */
+function startAllInRunout(room, cardsAlreadyRevealed = 0) {
   dealRemainingCommunityCards(room);
   room.stage = 'showdown';
   room.allInRunoutPending = true;
   io.to(room.code).emit('allInRunout', {
     state: getPublicState(room),
-    players: room.players.map(p => ({ id: p.id, cards: p.cards || [] }))
+    players: room.players.map(p => ({ id: p.id, cards: p.cards || [] })),
+    cardsAlreadyRevealed
   });
 }
 
@@ -664,7 +667,8 @@ function advanceStage(room) {
   // If all non-folded players are all-in, deal remaining cards and start all-in runout (client animates with delay, then we run showdown)
   const activeNonAllIn = room.players.filter(p => !p.folded && !p.isAllIn);
   if (activeNonAllIn.length === 0) {
-    startAllInRunout(room);
+    const cardsAlreadyRevealed = room.stage === 'flop' ? 0 : room.stage === 'turn' ? 3 : 4;
+    startAllInRunout(room, cardsAlreadyRevealed);
     return;
   }
 
