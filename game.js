@@ -794,53 +794,57 @@ function evaluateFiveCards(cards) {
     }
     const counts = Object.values(rankCounts).sort((a, b) => b - a);
     
+    // Build comparison order for tie-breaking (kickers). Used by compareHands.
+    const byCount = sortByCount(ranks, rankCounts);
+    const straightRanks = isLowStraight ? [5, 4, 3, 2, 1] : ranks;
+
     // Royal Flush
     if (isFlush && isStraight && ranks[0] === 14) {
-        return { rank: HAND_RANKINGS.ROYAL_FLUSH, value: calculateValue(ranks), name: 'Royal Flush', cards: sortedCards };
+        return { rank: HAND_RANKINGS.ROYAL_FLUSH, value: calculateValue(ranks), name: 'Royal Flush', cards: sortedCards, comparisonRanks: ranks };
     }
-    
-    // Straight Flush
+
+    // Straight Flush — no kicker; compare top card of straight only
     if (isFlush && (isStraight || isLowStraight)) {
-        return { rank: HAND_RANKINGS.STRAIGHT_FLUSH, value: calculateValue(isLowStraight ? [5,4,3,2,1] : ranks), name: 'Straight Flush', cards: sortedCards };
+        return { rank: HAND_RANKINGS.STRAIGHT_FLUSH, value: calculateValue(straightRanks), name: 'Straight Flush', cards: sortedCards, comparisonRanks: straightRanks };
     }
-    
-    // Four of a Kind
+
+    // Four of a Kind — quads first, then the one remaining card (kicker)
     if (counts[0] === 4) {
-        return { rank: HAND_RANKINGS.FOUR_OF_A_KIND, value: calculateValue(sortByCount(ranks, rankCounts)), name: 'Four of a Kind', cards: sortedCards };
+        return { rank: HAND_RANKINGS.FOUR_OF_A_KIND, value: calculateValue(byCount), name: 'Four of a Kind', cards: sortedCards, comparisonRanks: byCount };
     }
-    
-    // Full House
+
+    // Full House — no kicker; compare trips first, then pair
     if (counts[0] === 3 && counts[1] === 2) {
-        return { rank: HAND_RANKINGS.FULL_HOUSE, value: calculateValue(sortByCount(ranks, rankCounts)), name: 'Full House', cards: sortedCards };
+        return { rank: HAND_RANKINGS.FULL_HOUSE, value: calculateValue(byCount), name: 'Full House', cards: sortedCards, comparisonRanks: byCount };
     }
-    
-    // Flush
+
+    // Flush — compare highest card in flush, then next highest, etc.
     if (isFlush) {
-        return { rank: HAND_RANKINGS.FLUSH, value: calculateValue(ranks), name: 'Flush', cards: sortedCards };
+        return { rank: HAND_RANKINGS.FLUSH, value: calculateValue(ranks), name: 'Flush', cards: sortedCards, comparisonRanks: ranks };
     }
-    
-    // Straight
+
+    // Straight — no kicker; compare top card of straight only
     if (isStraight || isLowStraight) {
-        return { rank: HAND_RANKINGS.STRAIGHT, value: calculateValue(isLowStraight ? [5,4,3,2,1] : ranks), name: 'Straight', cards: sortedCards };
+        return { rank: HAND_RANKINGS.STRAIGHT, value: calculateValue(straightRanks), name: 'Straight', cards: sortedCards, comparisonRanks: straightRanks };
     }
-    
-    // Three of a Kind
+
+    // Three of a Kind — trips first, then highest remaining, then next
     if (counts[0] === 3) {
-        return { rank: HAND_RANKINGS.THREE_OF_A_KIND, value: calculateValue(sortByCount(ranks, rankCounts)), name: 'Three of a Kind', cards: sortedCards };
+        return { rank: HAND_RANKINGS.THREE_OF_A_KIND, value: calculateValue(byCount), name: 'Three of a Kind', cards: sortedCards, comparisonRanks: byCount };
     }
-    
-    // Two Pair
+
+    // Two Pair — highest pair, then lower pair, then last card (kicker)
     if (counts[0] === 2 && counts[1] === 2) {
-        return { rank: HAND_RANKINGS.TWO_PAIR, value: calculateValue(sortByCount(ranks, rankCounts)), name: 'Two Pair', cards: sortedCards };
+        return { rank: HAND_RANKINGS.TWO_PAIR, value: calculateValue(byCount), name: 'Two Pair', cards: sortedCards, comparisonRanks: byCount };
     }
-    
-    // One Pair
+
+    // One Pair — pair value first, then highest remaining, then next, then next
     if (counts[0] === 2) {
-        return { rank: HAND_RANKINGS.ONE_PAIR, value: calculateValue(sortByCount(ranks, rankCounts)), name: 'One Pair', cards: sortedCards };
+        return { rank: HAND_RANKINGS.ONE_PAIR, value: calculateValue(byCount), name: 'One Pair', cards: sortedCards, comparisonRanks: byCount };
     }
-    
-    // High Card
-    return { rank: HAND_RANKINGS.HIGH_CARD, value: calculateValue(ranks), name: 'High Card', cards: sortedCards };
+
+    // High Card — compare highest card, then next highest, etc.
+    return { rank: HAND_RANKINGS.HIGH_CARD, value: calculateValue(ranks), name: 'High Card', cards: sortedCards, comparisonRanks: ranks };
 }
 
 function checkStraight(ranks) {
@@ -874,6 +878,15 @@ function calculateValue(ranks) {
 function compareHands(hand1, hand2) {
     if (hand1.rank !== hand2.rank) {
         return hand1.rank - hand2.rank;
+    }
+    // Same hand type: break ties using comparison order (kickers)
+    const a = hand1.comparisonRanks;
+    const b = hand2.comparisonRanks;
+    if (a && b && a.length === 5 && b.length === 5) {
+        for (let i = 0; i < 5; i++) {
+            if (a[i] !== b[i]) return a[i] - b[i];
+        }
+        return 0;
     }
     return hand1.value - hand2.value;
 }

@@ -192,78 +192,88 @@ function evaluateFiveCards(cards) {
   }
   const counts = Object.values(rankCounts).sort((a, b) => b - a);
 
+  const byCount = sortByCount(ranks, rankCounts);
+  const straightRanks = isLowStraight ? [5, 4, 3, 2, 1] : ranks;
+
   if (isFlush && isStraight && ranks[0] === 14) {
-    return { rank: HAND_RANKINGS.ROYAL_FLUSH, value: calculateValue(ranks), name: 'Royal Flush', cards: sortedCards };
+    return { rank: HAND_RANKINGS.ROYAL_FLUSH, value: calculateValue(ranks), name: 'Royal Flush', cards: sortedCards, comparisonRanks: ranks };
   }
 
   if (isFlush && (isStraight || isLowStraight)) {
     return {
       rank: HAND_RANKINGS.STRAIGHT_FLUSH,
-      value: calculateValue(isLowStraight ? [5, 4, 3, 2, 1] : ranks),
+      value: calculateValue(straightRanks),
       name: 'Straight Flush',
-      cards: sortedCards
+      cards: sortedCards,
+      comparisonRanks: straightRanks
     };
   }
 
   if (counts[0] === 4) {
     return {
       rank: HAND_RANKINGS.FOUR_OF_A_KIND,
-      value: calculateValue(sortByCount(ranks, rankCounts)),
+      value: calculateValue(byCount),
       name: 'Four of a Kind',
-      cards: sortedCards
+      cards: sortedCards,
+      comparisonRanks: byCount
     };
   }
 
   if (counts[0] === 3 && counts[1] === 2) {
     return {
       rank: HAND_RANKINGS.FULL_HOUSE,
-      value: calculateValue(sortByCount(ranks, rankCounts)),
+      value: calculateValue(byCount),
       name: 'Full House',
-      cards: sortedCards
+      cards: sortedCards,
+      comparisonRanks: byCount
     };
   }
 
   if (isFlush) {
-    return { rank: HAND_RANKINGS.FLUSH, value: calculateValue(ranks), name: 'Flush', cards: sortedCards };
+    return { rank: HAND_RANKINGS.FLUSH, value: calculateValue(ranks), name: 'Flush', cards: sortedCards, comparisonRanks: ranks };
   }
 
   if (isStraight || isLowStraight) {
     return {
       rank: HAND_RANKINGS.STRAIGHT,
-      value: calculateValue(isLowStraight ? [5, 4, 3, 2, 1] : ranks),
+      value: calculateValue(straightRanks),
       name: 'Straight',
-      cards: sortedCards
+      cards: sortedCards,
+      comparisonRanks: straightRanks
     };
   }
 
   if (counts[0] === 3) {
     return {
       rank: HAND_RANKINGS.THREE_OF_A_KIND,
-      value: calculateValue(sortByCount(ranks, rankCounts)),
+      value: calculateValue(byCount),
       name: 'Three of a Kind',
-      cards: sortedCards
+      cards: sortedCards,
+      comparisonRanks: byCount
     };
   }
 
   if (counts[0] === 2 && counts[1] === 2) {
     return {
       rank: HAND_RANKINGS.TWO_PAIR,
-      value: calculateValue(sortByCount(ranks, rankCounts)),
+      value: calculateValue(byCount),
       name: 'Two Pair',
-      cards: sortedCards
+      cards: sortedCards,
+      comparisonRanks: byCount
     };
   }
 
   if (counts[0] === 2) {
     return {
       rank: HAND_RANKINGS.ONE_PAIR,
-      value: calculateValue(sortByCount(ranks, rankCounts)),
+      value: calculateValue(byCount),
       name: 'One Pair',
-      cards: sortedCards
+      cards: sortedCards,
+      comparisonRanks: byCount
     };
   }
 
-  return { rank: HAND_RANKINGS.HIGH_CARD, value: calculateValue(ranks), name: 'High Card', cards: sortedCards };
+  return { rank: HAND_RANKINGS.HIGH_CARD, value: calculateValue(ranks), name: 'High Card', cards: sortedCards, comparisonRanks: ranks };
 }
 
 function checkStraight(ranks) {
@@ -297,6 +307,14 @@ function calculateValue(ranks) {
 function compareHands(hand1, hand2) {
   if (hand1.rank !== hand2.rank) {
     return hand1.rank - hand2.rank;
+  }
+  const a = hand1.comparisonRanks;
+  const b = hand2.comparisonRanks;
+  if (a && b && a.length === 5 && b.length === 5) {
+    for (let i = 0; i < 5; i++) {
+      if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return 0;
   }
   return hand1.value - hand2.value;
 }
