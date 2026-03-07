@@ -59,7 +59,7 @@ const CHIP_DENOMINATIONS = [
     { value: 25, color: 'green', label: '$25' },
     { value: 10, color: 'blue', label: '$10' },
     { value: 5, color: 'red', label: '$5' },
-    { value: 1, color: 'white', label: '$1' }
+    { value: 1, color: 'orange', label: '$1' }
 ];
 
 // ============================================
@@ -121,7 +121,7 @@ const elements = {
     potChips: document.querySelector('.pot-chips'),
     gameContainer: document.querySelector('.game-container'),
     userChips: document.getElementById('user-chips'),
-    userChipsContainer: document.querySelector('.user-chips'),
+    userChipStack: document.getElementById('user-chip-stack'),
     roundStage: document.getElementById('round-stage'),
     actionPanel: document.getElementById('action-panel'),
     foldBtn: document.getElementById('fold-btn'),
@@ -593,11 +593,12 @@ function amountToChips(amount) {
     return result;
 }
 
-/** Create HTML for a chip stack. size: 'small' | 'medium' | 'large' */
-function createChipStackHTML(chips, size = 'medium') {
+/** Create HTML for a chip stack. size: 'small' | 'medium' | 'large'. multiLine: true for opponent stacks (even rows) */
+function createChipStackHTML(chips, size = 'medium', multiLine = false) {
     if (!chips || chips.length === 0) return '';
     const sizeClass = `chip-stack-${size}`;
-    let html = `<div class="chip-stack ${sizeClass}">`;
+    const multiClass = multiLine ? ' chip-stack-multiline' : '';
+    let html = `<div class="chip-stack ${sizeClass}${multiClass}">`;
     for (const { value, count, color } of chips) {
         const maxShow = size === 'small' ? 4 : size === 'medium' ? 6 : 8;
         const toShow = Math.min(count, maxShow);
@@ -622,7 +623,7 @@ function renderPotChips() {
 /** Get element that represents a player's chip stack position (for animation source) */
 function getPlayerChipStackElement(playerId) {
     if (playerId === localPlayerId) {
-        return document.querySelector('.user-chip-stack') || elements.userChipsContainer;
+        return elements.userChipStack || document.querySelector('.user-chip-stack');
     }
     const seat = document.querySelector(`[data-player-id="${playerId}"]`);
     return seat ? seat.querySelector('.player-chip-stack') || seat.querySelector('.player-info-box') : null;
@@ -1183,32 +1184,59 @@ async function confirmRaise() {
 
 async function executeAction(player, action, amount = 0) {
     const playerSeat = document.querySelector(`[data-player-id="${player.id}"]`);
-    
+    const prevBet = player.currentBet || 0;
+    // Server sends: call = actualAmount (delta); raise/all-in = totalBet
+    const amountAdded = (action === 'call')
+        ? Math.max(0, amount)
+        : Math.max(0, amount - prevBet);
+
     if (action === 'fold') {
         player.folded = true;
-        
+
         // Animate cards folding
         if (playerSeat) {
             const cards = playerSeat.querySelectorAll('.card');
             cards.forEach(card => card.classList.add('folding'));
         }
-        
+
         if (player.isUser) {
             const userCards = elements.userHand.querySelectorAll('.card');
             userCards.forEach(card => card.classList.add('folding'));
         }
-        
+
         showPlayerAction(player, 'Fold');
     } else if (action === 'check') {
         showPlayerAction(player, 'Check');
     } else if (action === 'call') {
         showPlayerAction(player, `Call $${amount}`);
+        if (amountAdded > 0) {
+            player.chips = (player.chips || 0) - amountAdded;
+            player.currentBet = (player.currentBet || 0) + amountAdded;
+            gameState.pot = (gameState.pot || 0) + amountAdded;
+            const src = getPlayerChipStackElement(player.id);
+            await animateChipsToPot(src, amountAdded);
+        }
     } else if (action === 'raise') {
         showPlayerAction(player, `Raise to $${amount}`);
+        if (amountAdded > 0) {
+            player.chips = (player.chips || 0) - amountAdded;
+            player.currentBet = amount;
+            gameState.currentBet = amount;
+            gameState.pot = (gameState.pot || 0) + amountAdded;
+            const src = getPlayerChipStackElement(player.id);
+            await animateChipsToPot(src, amountAdded);
+        }
     } else if (action === 'all-in') {
         showPlayerAction(player, 'All-In!');
+        if (amountAdded > 0) {
+            player.chips = (player.chips || 0) - amountAdded;
+            player.currentBet = amount;
+            gameState.pot = (gameState.pot || 0) + amountAdded;
+            const src = getPlayerChipStackElement(player.id);
+            await animateChipsToPot(src, amountAdded);
+        }
     }
-    
+
     updateUI();
 }
 
@@ -1235,8 +1263,40 @@ function renderTable() {
     
     const numPlayers = gameState.players.length;
     const positions = getPlayerPositions(numPlayers);
-    let opponentIndex = 0;
+    const numOpponents = numPlayers - 1;
+    const opponentPositions = numOpponents > 0 ? positions.slice(1, 1 + numOpponents) : [];
+    const minOpponentY = opponentPositions.length ? Math.min(...opponentPositions.map(p => p.y)) : 100;
+    const hasTopPlayer = opponentPositions.length > 0 && minOpponentY < 35;
+    const TOP_OFFSET = 14;
+    const BOTTOM_OFFSET = 14;
+    const BOTTOM_Y_THRESHOLD = 75;
+    const BOTTOM_SQUEEZE = 6;
 
+    const pokerTable = document.querySelector('.poker-table');
+    const tableFelt = document.querySelector('.table-felt');
+    const useExpandedTable = numPlayers >= 5;
+    const sixOrMorePlayers = numPlayers >= 6;
+    if (pokerTable) {
+        pokerTable.classList.toggle('table-expanded', useExpandedTable);
+        if (useExpandedTable) {
+            const extraPlayers = Math.max(0, numPlayers - 5);
+            const scale = 1 + extraPlayers * 0.035;
+            pokerTable.style.setProperty('--table-expanded-max-width', `${Math.round(1520 * scale)}px`);
+            pokerTable.style.setProperty('--table-expanded-max-width-vh', `${Math.round(120 * scale)}vh`);
+            pokerTable.style.setProperty('--table-expanded-max-height', `${Math.round(60 + extraPlayers * 1.5)}vh`);
+        } else {
+            pokerTable.style.removeProperty('--table-expanded-max-width');
+            pokerTable.style.removeProperty('--table-expanded-max-width-vh');
+            pokerTable.style.removeProperty('--table-expanded-max-height');
+        }
+    }
+    if (tableFelt) {
+        tableFelt.classList.toggle('has-top-player', hasTopPlayer);
+        tableFelt.classList.toggle('six-or-more-players', sixOrMorePlayers);
+        tableFelt.classList.toggle('many-players', false);
+    }
+
+    let opponentIndex = 0;
     gameState.players.forEach((player) => {
         if (player.isUser) return; // User is rendered separately
 
@@ -1246,12 +1306,25 @@ function renderTable() {
 
         const pos = positions[opponentIndex + 1] || positions[1];
         opponentIndex++;
-        seat.style.left = `${pos.x}%`;
-        seat.style.top = `${pos.y}%`;
+        const isTopSeat = hasTopPlayer && pos.y < 35;
+        const isBottomSeat = pos.y > BOTTOM_Y_THRESHOLD;
+        if (isTopSeat) seat.classList.add('seat-at-top');
+        if (isBottomSeat) seat.classList.add('seat-at-bottom');
+        let seatY = pos.y;
+        let seatX = pos.x;
+        if (isTopSeat) seatY = pos.y + TOP_OFFSET;
+        else if (isBottomSeat) {
+            seatY = Math.min(98, pos.y + BOTTOM_OFFSET);
+            if (pos.x < 50) seatX = Math.min(82, pos.x + BOTTOM_SQUEEZE);
+            else if (pos.x > 50) seatX = Math.max(18, pos.x - BOTTOM_SQUEEZE);
+        }
+        seat.style.left = `${seatX}%`;
+        seat.style.top = `${seatY}%`;
         seat.style.transform = 'translate(-50%, -50%)';
         
         seat.innerHTML = `
             <div class="player-cards"></div>
+            <div class="player-chip-stack"></div>
             <div class="player-info-box">
                 ${(gameState.players[gameState.dealerIndex]?.id === player.id) ? '<div class="dealer-chip">D</div>' : ''}
                 <div class="player-name">${player.name}</div>
@@ -1280,11 +1353,12 @@ function getPlayerPositions(numPlayers) {
     
     const numOpponents = numPlayers - 1;
     
-    // Ellipse parameters
+    // Ellipse sized to fill the felt (assume current player count is max; positions readjust when more join)
+    // centerY=50, radiusY=46 => y from 4 to 96, using almost all vertical felt space
     const centerX = 50;
-    const centerY = 42;
+    const centerY = 50;
     const radiusX = 47;
-    const radiusY = 40;
+    const radiusY = 46;
     
     const startAngle = 220;  
     const endAngle = -40;    
@@ -1384,27 +1458,34 @@ function renderCommunityCards() {
 function updateUI() {
     // Update pot
     elements.potAmount.textContent = gameState.pot;
-    
-    // Update user chips
+    renderPotChips();
+
+    // Update user chips and chip stack
     const user = getLocalPlayer();
-    elements.userChips.textContent = user ? user.chips : 0;
-    
+    if (elements.userChips) elements.userChips.textContent = user ? user.chips : 0;
+    const userStack = elements.userChipStack || document.querySelector('.user-chip-stack');
+    if (userStack && user) {
+        userStack.innerHTML = createChipStackHTML(amountToChips(user.chips || 0), 'medium');
+    }
+
     // Update stage
     elements.roundStage.textContent = STAGE_NAMES[gameState.stage];
-    
+
     // Update all player displays
     gameState.players.forEach(player => {
         if (player.isUser) return;
-        
+
         const seat = document.querySelector(`[data-player-id="${player.id}"]`);
         if (!seat) return;
-        
+
         const chipsEl = seat.querySelector('.player-chips');
         const betEl = seat.querySelector('.player-bet');
-        
+        const stackEl = seat.querySelector('.player-chip-stack');
+
         if (chipsEl) chipsEl.textContent = `$${player.chips}`;
         if (betEl) betEl.textContent = player.currentBet > 0 ? `Bet: $${player.currentBet}` : '';
-        
+        if (stackEl) stackEl.innerHTML = createChipStackHTML(amountToChips(player.chips || 0), 'small', true);
+
         if (player.folded) {
             seat.classList.add('folded');
         } else {
@@ -1523,6 +1604,19 @@ async function runAllInRunoutSequence() {
     }
 }
 
+function getBlindPosters() {
+    const blinds = gameState.blinds;
+    if (!blinds || !blinds.enabled || blinds.small <= 0 || blinds.big <= 0) return null;
+    const inHand = gameState.players.filter(p => !p.folded && (p.chips || 0) > 0);
+    if (inHand.length < 2) return null;
+    const dealerIdx = gameState.dealerIndex;
+    const sbIdx = inHand.length === 2 ? dealerIdx : getNextActivePlayer(dealerIdx);
+    const bbIdx = getNextActivePlayer(sbIdx);
+    const sbPlayer = gameState.players[sbIdx];
+    const bbPlayer = gameState.players[bbIdx];
+    return sbPlayer && bbPlayer ? { sb: sbPlayer, bb: bbPlayer, small: blinds.small, big: blinds.big } : null;
+}
+
 async function runRoundStartSequence(state) {
     if (!state) return;
     gameState.isUserTurn = false;
@@ -1534,6 +1628,16 @@ async function runRoundStartSequence(state) {
     elements.userHand.innerHTML = '';
     gameState.players.forEach(p => { if (p.id !== localPlayerId) p.cards = []; });
     applyServerState(state);
+
+    // Animate blinds to pot if applicable
+    const blindInfo = getBlindPosters();
+    if (blindInfo && gameState.pot > 0) {
+        const sbEl = getPlayerChipStackElement(blindInfo.sb.id);
+        const bbEl = getPlayerChipStackElement(blindInfo.bb.id);
+        if (sbEl && blindInfo.small > 0) await animateChipsToPot(sbEl, blindInfo.small);
+        if (bbEl && blindInfo.big > 0) await animateChipsToPot(bbEl, blindInfo.big);
+    }
+
     if (socket && roomCode != null && localPlayerId != null) {
         socket.emit('playerReady', { code: roomCode, playerId: localPlayerId });
     }
@@ -1559,4 +1663,3 @@ function handleContinue() {
 // ============================================
 
 document.addEventListener('DOMContentLoaded', initializeGame);
-
