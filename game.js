@@ -86,6 +86,7 @@ let isHost = false;
 let hasCreatedRoom = false;
 let shuffleInProgress = false;
 let pendingRoundState = null;
+let waitingOnPlayers = false;
 
 // ============================================
 // GAME STATE
@@ -311,10 +312,13 @@ function setupSocket() {
         const text = names.length === 1 ? names[0] : names.join(', ');
         elements.waitingNames.textContent = text;
         elements.waitingOverlay.classList.add('active');
+        waitingOnPlayers = true;
+        updateCurrentPlayerHighlight();
     });
 
     socket.on('turn', ({ currentPlayerId }) => {
         if (elements.waitingOverlay) elements.waitingOverlay.classList.remove('active');
+        waitingOnPlayers = false;
         const idx = gameState.players.findIndex(p => p.id === currentPlayerId);
         if (idx !== -1) {
             gameState.currentPlayerIndex = idx;
@@ -1687,8 +1691,8 @@ function updateCurrentPlayerHighlight() {
         }
     }
     
-    // Highlight action panel for user (disabled during all-in runout)
-    if (gameState.allInRunout) {
+    // Highlight action panel for user (disabled during all-in runout or while waiting on players to join round)
+    if (gameState.allInRunout || waitingOnPlayers) {
         elements.actionPanel.classList.add('disabled');
     } else if (currentPlayer && currentPlayer.isUser) {
         elements.actionPanel.classList.remove('disabled');
