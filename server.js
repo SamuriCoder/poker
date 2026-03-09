@@ -765,12 +765,9 @@ function showdown(room) {
   room.lastShowdownHandName = handName;
   room.lastShowdownHand = winners[0] && winners[0].hand ? winners[0].hand : null;
   room.lastShowdownRunnerUp = runnerUp;
-
-  setTimeout(() => {
-    if (room.gameActive) {
-      startNewRound(room);
-    }
-  }, 2500);
+  if (room.gameActive) {
+    startNewRound(room);
+  }
 }
 
 function endGame(room) {
@@ -886,12 +883,9 @@ function executeAction(room, player, action, amount) {
       winnerId: winner.id
     });
     io.to(room.code).emit('roomState', getPublicState(room));
-
-    setTimeout(() => {
-      if (room.gameActive) {
-        startNewRound(room);
-      }
-    }, 2500);
+    if (room.gameActive) {
+      startNewRound(room);
+    }
     return;
   }
 
